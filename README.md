@@ -77,4 +77,4 @@ e aponte o cliente para a API.
   (detalhes oficiais marcados “To be verified / A confirmar”).
 - `client/src/lib/study-store.tsx` — estado + persistência local.
 - `server/routers.ts` — API tRPC (`tutor.ask` com fallback offline).
-- `client/public/manus-routes.json` — manifesto de páginas.
+- `client/public/app-routes.json` — manifesto de páginas.

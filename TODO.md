@@ -59,7 +59,7 @@ retorna fallback offline com `offline:true`).
 - [ ] **Privacidade, persistência e publicação online:** localStorage sem
   login/sem sincronização (avisado em Configurações e no tutor),
   exportar **e restaurar** backup JSON, `tsc`/rota `/api/health`/
-  `manus-routes.json`/build validados. **Deploy:** `netlify.toml` adicionado
+  `app-routes.json`/build validados. **Deploy:** `netlify.toml` adicionado
   (estático: `pnpm build:static` → `dist/public`, SPA redirect, sem env
   obrigatória; tutor em modo offline no navegador, bundle verificado com o
   fallback embutido e `dist/public` testado via servidor estático local).
