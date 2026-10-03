@@ -1187,7 +1187,14 @@ export function TutorPage() {
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [offline, setOffline] = useState(false);
+  const [provider, setProvider] = useState("");
   const mutation = trpc.tutor.ask.useMutation();
+  const providerTag =
+    provider === "gemini"
+      ? "IA · GEMINI (GRATUITA)"
+      : provider === "ollama"
+        ? "IA · OLLAMA (LOCAL)"
+        : "IA GERENCIADA";
   const storedMessages = state.tutorMessages;
   const messages = storedMessages.length
     ? storedMessages
@@ -1222,6 +1229,7 @@ export function TutorPage() {
         })),
       });
       setOffline(result.offline === true);
+      setProvider((result as { provider?: string }).provider ?? "");
       saveTutorMessages([
         ...thread,
         {
@@ -1256,7 +1264,7 @@ export function TutorPage() {
         description="Explore conceitos, compare sistemas e pratique explicações — com respostas calibradas ao seu nível e limites de segurança explícitos."
         action={
           <span className="ai-status-tag">
-            <span /> IA GERENCIADA
+            <span /> {offline ? "MODO OFFLINE" : providerTag}
           </span>
         }
       />

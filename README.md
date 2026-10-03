@@ -50,6 +50,28 @@ igual ao ambiente local. Para o tutor online com IA, hospede o backend
 (`npm run build` + `npm run start`) em serviço Node (ex.: Render/Fly/Railway)
 e aponte o cliente para a API.
 
+## Ativar IA gratuita no tutor
+
+Sem nenhuma chave, o tutor responde em modo offline (orientação local).
+Para respostas de IA de verdade, sem pagar nada, escolha uma via
+(o servidor tenta nesta ordem: gerenciada → Gemini → Ollama → offline):
+
+**Opção 1 — Google Gemini (nuvem, cota gratuita):**
+1. Gere uma chave em https://aistudio.google.com/apikey
+2. Crie um `.env` na raiz (use `.env.example` de modelo) com
+   `GEMINI_API_KEY=sua-chave` e rode `npm run dev`
+
+**Opção 2 — Ollama (local, 100% grátis, funciona offline):**
+1. Instale https://ollama.com e baixe um modelo: `ollama pull llama3.1:8b`
+2. Rode `ollama serve` e depois `npm run dev` (padrão já aponta para
+   `http://localhost:11434`; ajuste via `OLLAMA_HOST`/`OLLAMA_MODEL`)
+3. Respostas locais costumam levar dezenas de segundos — aguarde o
+   indicador “pensando”
+
+A etiqueta no topo do tutor mostra a origem: IA GERENCIADA, IA · GEMINI,
+IA · OLLAMA ou MODO OFFLINE. Chaves ficam só no servidor (`.env` está no
+`.gitignore` — nunca faça commit delas).
+
 ## Tutor técnico (IA)
 
 - Com o serviço de IA gerenciado configurado no servidor, as respostas vêm

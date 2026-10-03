@@ -6,6 +6,7 @@ import { invokeLLM } from "./_core/llm";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { buildOfflineTutorReply } from "./tutorFallback";
+import { chatWithFreeProviders } from "./aiProviders";
 
 const TUTOR_RATE_WINDOW_MS = 60_000;
 const TUTOR_RATE_MAX = 12;
@@ -98,20 +99,30 @@ export const appRouter = router({
                     .trim()
                 : "";
           if (!text) throw new Error("A resposta do tutor veio vazia.");
-          return { text, offline: false as const };
+          return { text, offline: false as const, provider: "manus" as const };
         } catch (error) {
           console.error(
-            "Tutor request failed, using offline fallback:",
+            "Managed tutor failed, trying free providers:",
             error instanceof Error ? error.message : "unknown error"
           );
-          // Sem IA gerenciada (sem chave/créditos/rede), o app continua
-          // funcional com orientação educacional local e segura.
+          // 1) Provedores gratuitos (Gemini → Ollama), se configurados.
+          const free = await chatWithFreeProviders(
+            `${safetyGuidance}${interviewGuidance}`,
+            input.messages.map(message => ({
+              role: message.role,
+              content: message.content,
+            }))
+          );
+          if (free) return { text: free.text, offline: false as const, provider: free.provider };
+          // 2) Sem nenhuma IA disponível: orientação educacional local e segura.
+          console.error("No AI provider available, using offline fallback.");
           const lastUser = input.messages
             .filter(message => message.role === "user")
             .at(-1)?.content;
           return {
             text: buildOfflineTutorReply(input.mode, lastUser ?? ""),
             offline: true as const,
+            provider: "offline" as const,
           };
         }
       }),

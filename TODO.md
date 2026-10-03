@@ -29,6 +29,9 @@ retorna fallback offline com `offline:true`).
   cenários (`SCENARIOS` + `EXTRA_SCENARIOS`) com título EN, descrição PT,
   contexto, sintomas, perguntas, feedback, segurança, escalonamento e
   vocabulário; nenhum ensina switching/isolação/reenergização.
+  IA gratuita: cadeia gerenciada → Gemini (`server/aiProviders.ts`,
+  7 testes) → Ollama local → fallback offline; origem exibida na UI;
+  E2E validado com Ollama simulado (`provider: ollama`, `offline: false`).
 
 - [x] **Interview Preparation, Technical English, Study Notes e Courses:**
   10+ perguntas EN por categoria com ajuda PT, resposta EN salva, feedback
