@@ -32,6 +32,15 @@ retorna fallback offline com `offline:true`).
   IA gratuita: cadeia gerenciada → Gemini (`server/aiProviders.ts`,
   7 testes) → Ollama local → fallback offline; origem exibida na UI;
   E2E validado com Ollama simulado (`provider: ollama`, `offline: false`).
+  Chave no navegador: campo em Configurações com teste e erros claros
+  (`client/src/lib/geminiClient.ts`, 8 testes), usado pelo Tutor e pelas
+  Entrevistas antes das demais vias; prompt de segurança unificado em
+  `shared/tutorPrompt.ts`; chave fora do backup JSON.
+  Modelos Gemini atualizados (2.5-flash, 3.5-flash-lite) após validação real
+  contra a API; provedor OpenAI-compatível (DeepSeek/OpenAI) no servidor e
+  no navegador, com card próprio em Configurações (presets, teste, erros
+  401/402/429) e 5+2 testes; cadeia: chave Gemini → chave compatível →
+  servidor → offline.
 
 - [x] **Interview Preparation, Technical English, Study Notes e Courses:**
   10+ perguntas EN por categoria com ajuda PT, resposta EN salva, feedback

@@ -16,7 +16,7 @@ export interface FreeChatMessage {
   content: string;
 }
 
-export type FreeProviderId = "gemini" | "ollama";
+export type FreeProviderId = "gemini" | "compat" | "ollama";
 
 export interface FreeChatResult {
   text: string;
@@ -26,7 +26,7 @@ export interface FreeChatResult {
 const GEMINI_MODELS = (process.env.GEMINI_MODEL
   ? [process.env.GEMINI_MODEL]
   : []
-).concat(["gemini-2.5-flash", "gemini-2.0-flash"]);
+).concat(["gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-3.5-flash"]);
 
 function withTimeout(ms: number): { signal: AbortSignal; done: () => void } {
   const controller = new AbortController();
@@ -148,13 +148,78 @@ export async function chatWithOllama(
   }
 }
 
-/** Tenta Gemini e depois Ollama. Retorna null se nenhum estiver disponível. */
+export interface OpenAICompatConfig {
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+}
+
+export function openaiCompatConfig(): OpenAICompatConfig {
+  return {
+    baseUrl: (process.env.OPENAI_COMPAT_BASE_URL ?? "").replace(/\/+$/, ""),
+    model: process.env.OPENAI_COMPAT_MODEL ?? "deepseek-chat",
+    apiKey: process.env.OPENAI_COMPAT_API_KEY ?? "",
+  };
+}
+
+function parseCompatText(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const choices = (payload as { choices?: unknown }).choices;
+  if (!Array.isArray(choices) || !choices.length) return null;
+  const content = (choices[0] as { message?: { content?: unknown } })?.message
+    ?.content;
+  const text = typeof content === "string" ? content.trim() : "";
+  return text || null;
+}
+
+/** API estilo OpenAI (/chat/completions): DeepSeek, OpenAI, etc. */
+export async function chatWithOpenAICompatible(
+  systemPrompt: string,
+  messages: FreeChatMessage[],
+  config = openaiCompatConfig()
+): Promise<string | null> {
+  const baseUrl = config.baseUrl.trim().replace(/\/+$/, "");
+  if (!baseUrl || !config.apiKey.trim()) return null;
+  const { signal, done } = withTimeout(90_000);
+  try {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey.trim()}`,
+      },
+      signal,
+      body: JSON.stringify({
+        model: config.model,
+        temperature: 0.4,
+        max_tokens: 750,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...messages.map(message => ({
+            role: message.role,
+            content: message.content,
+          })),
+        ],
+      }),
+    });
+    if (!response.ok) return null;
+    return parseCompatText(await response.json());
+  } catch {
+    return null;
+  } finally {
+    done();
+  }
+}
+
+/** Tenta Gemini, depois API OpenAI-compatível e depois Ollama. */
 export async function chatWithFreeProviders(
   systemPrompt: string,
   messages: FreeChatMessage[]
 ): Promise<FreeChatResult | null> {
   const gemini = await chatWithGemini(systemPrompt, messages);
   if (gemini) return { text: gemini, provider: "gemini" };
+  const compat = await chatWithOpenAICompatible(systemPrompt, messages);
+  if (compat) return { text: compat, provider: "compat" };
   const ollama = await chatWithOllama(systemPrompt, messages);
   if (ollama) return { text: ollama, provider: "ollama" };
   return null;

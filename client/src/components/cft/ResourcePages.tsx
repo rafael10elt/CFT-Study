@@ -43,6 +43,27 @@ import {
 import { trpc } from "@/lib/trpc";
 import { buildOfflineTutorReply } from "@shared/tutorFallback";
 import {
+  chatWithGeminiBrowser,
+  clearStoredGeminiKey,
+  GeminiKeyError,
+  getStoredGeminiKey,
+  hasStoredGeminiKey,
+  probeGeminiKey,
+  setStoredGeminiKey,
+} from "@/lib/geminiClient";
+import {
+  chatWithCompatBrowser,
+  clearStoredCompatConfig,
+  CompatKeyError,
+  COMPAT_PRESETS,
+  getStoredCompatConfig,
+  hasStoredCompatKey,
+  probeCompatConfig,
+  setStoredCompatConfig,
+} from "@/lib/openaiCompatClient";
+
+import { buildTutorSystemPrompt } from "@shared/tutorPrompt";
+import {
   INITIAL_COURSES,
   INTERVIEW_QUESTIONS,
   STATUS_LABELS,
@@ -562,6 +583,7 @@ export function InterviewPage() {
   const [answer, setAnswer] = useState(record?.answer ?? "");
   const [feedback, setFeedback] = useState(record?.feedback ?? "");
   const [offlineFeedback, setOfflineFeedback] = useState(false);
+  const [keyNotice, setKeyNotice] = useState("");
   const mutation = trpc.tutor.ask.useMutation();
   const changeQuestion = (category: string, index = 0) => {
     setSelectedCategory(category);
@@ -576,6 +598,57 @@ export function InterviewPage() {
   const getFeedback = async () => {
     if (!answer.trim()) return;
     saveInterviewAnswer(question.id, answer);
+    setKeyNotice("");
+    // Via 0 — chave do navegador (funciona até no site estático).
+    const browserKey = getStoredGeminiKey();
+    if (browserKey) {
+      try {
+        const direct = await chatWithGeminiBrowser(
+          buildTutorSystemPrompt("interview-feedback"),
+          [
+            {
+              role: "user",
+              content: `Interview question (English): ${question.question}\n\nStudent's answer (use only these facts):\n${answer.slice(0, 2200)}\n\nGive feedback in Portuguese and, if helpful, a concise English version that does not add claims.`,
+            },
+          ],
+          browserKey
+        );
+        setFeedback(direct.text);
+        setOfflineFeedback(false);
+        saveInterviewAnswer(question.id, answer, direct.text);
+        return;
+      } catch (caught) {
+        const reason =
+          caught instanceof GeminiKeyError
+            ? caught.message
+            : "Falha com a chave salva.";
+        setKeyNotice(`${reason} Tentando outra via…`);
+      }
+    }
+    if (hasStoredCompatKey()) {
+      try {
+        const direct = await chatWithCompatBrowser(
+          buildTutorSystemPrompt("interview-feedback"),
+          [
+            {
+              role: "user",
+              content: `Interview question (English): ${question.question}\n\nStudent's answer (use only these facts):\n${answer.slice(0, 2200)}\n\nGive feedback in Portuguese and, if helpful, a concise English version that does not add claims.`,
+            },
+          ],
+          getStoredCompatConfig()
+        );
+        setFeedback(direct.text);
+        setOfflineFeedback(false);
+        saveInterviewAnswer(question.id, answer, direct.text);
+        return;
+      } catch (caught) {
+        const reason =
+          caught instanceof CompatKeyError
+            ? caught.message
+            : "Falha com a API alternativa.";
+        setKeyNotice(`${reason} Tentando outra via…`);
+      }
+    }
     try {
       const result = await mutation.mutateAsync({
         mode: "interview-feedback",
@@ -690,6 +763,7 @@ export function InterviewPage() {
               {mutation.isPending ? "Analisando…" : "Pedir feedback de IA"}
             </Button>
           </div>
+          {keyNotice && <p className="settings-copy">{keyNotice}</p>}
           {feedback && (
             <div className="interview-feedback">
               <span className="eyebrow">
@@ -1557,6 +1631,76 @@ export function SettingsPage() {
     resetData,
   } = useStudy();
   const [importMessage, setImportMessage] = useState("");
+  const [geminiKey, setGeminiKey] = useState(() => getStoredGeminiKey());
+  const [geminiMessage, setGeminiMessage] = useState("");
+  const [geminiTesting, setGeminiTesting] = useState(false);
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const testAndSaveGemini = async () => {
+    const value = geminiKey.trim();
+    if (!value) {
+      setGeminiMessage("Cole sua chave antes de testar.");
+      return;
+    }
+    setGeminiTesting(true);
+    setGeminiMessage("Testando chave com o Google…");
+    const result = await probeGeminiKey(value);
+    setGeminiTesting(false);
+    if (result.ok) {
+      setStoredGeminiKey(value);
+      setGeminiMessage(
+        `Chave válida (${result.model}, resposta em ${result.ms} ms). Salva somente neste navegador.`
+      );
+    } else {
+      setGeminiMessage(`Não funcionou: ${result.error} Nada foi salvo.`);
+    }
+  };
+  const removeGeminiKey = () => {
+    clearStoredGeminiKey();
+    setGeminiKey("");
+    setGeminiMessage("Chave removida deste navegador. O tutor volta ao modo offline.");
+  };
+  const storedCompat = getStoredCompatConfig();
+  const [compatBase, setCompatBase] = useState(storedCompat.baseUrl);
+  const [compatModel, setCompatModel] = useState(storedCompat.model);
+  const [compatKey, setCompatKey] = useState(storedCompat.apiKey);
+  const [compatMessage, setCompatMessage] = useState("");
+  const [compatTesting, setCompatTesting] = useState(false);
+  const [showCompatKey, setShowCompatKey] = useState(false);
+  const applyCompatPreset = (preset: keyof typeof COMPAT_PRESETS) => {
+    setCompatBase(COMPAT_PRESETS[preset].baseUrl);
+    setCompatModel(COMPAT_PRESETS[preset].model);
+    setCompatMessage(`Modelo ${COMPAT_PRESETS[preset].label} preenchido. Cole a chave e teste.`);
+  };
+  const testAndSaveCompat = async () => {
+    const config = {
+      baseUrl: compatBase.trim(),
+      model: compatModel.trim(),
+      apiKey: compatKey.trim(),
+    };
+    if (!config.baseUrl || !config.apiKey) {
+      setCompatMessage("Preencha base URL e chave antes de testar.");
+      return;
+    }
+    setCompatTesting(true);
+    setCompatMessage("Testando com a API…");
+    const result = await probeCompatConfig(config);
+    setCompatTesting(false);
+    if (result.ok) {
+      setStoredCompatConfig(config);
+      setCompatMessage(
+        `Configuração válida (modelo ${result.model}, resposta em ${result.ms} ms). Salva somente neste navegador.`
+      );
+    } else {
+      setCompatMessage(`Não funcionou: ${result.error} Nada foi salvo.`);
+    }
+  };
+  const removeCompatKey = () => {
+    clearStoredCompatConfig();
+    setCompatBase("");
+    setCompatModel("");
+    setCompatKey("");
+    setCompatMessage("Configuração removida deste navegador.");
+  };
   const restoreBackup = (file: File | undefined) => {
     if (!file) return;
     setImportMessage("");
@@ -1687,6 +1831,146 @@ export function SettingsPage() {
                 {saved ? "Preferências salvas" : "Salvar intervalos"}
               </Button>
             </div>
+          </Card>
+          <Card className="settings-card">
+            <div className="settings-section-heading">
+              <span className="settings-icon mint">
+                <Sparkles size={17} />
+              </span>
+              <div>
+                <span className="eyebrow">IA DO TUTOR · GEMINI</span>
+                <h3>Chave da API do Gemini</h3>
+              </div>
+            </div>
+            <p className="settings-copy">
+              Ativa respostas de IA de verdade no tutor e nas entrevistas,
+              inclusive no site publicado (Netlify), onde não há servidor. A
+              chave fica somente neste navegador e nunca entra no backup JSON.
+              Variáveis de ambiente do Netlify não são usadas pelo site
+              estático — é este campo que vale.
+            </p>
+            <label className="field-label">
+              Gemini API key
+              <input
+                type={showGeminiKey ? "text" : "password"}
+                className="field-control"
+                value={geminiKey}
+                onChange={event => setGeminiKey(event.target.value)}
+                placeholder="AIza…"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <small>
+                Gratuita em aistudio.google.com/apikey. Por segurança,
+                restrinja a chave por referenciador HTTP ao seu domínio e nunca
+                a compartilhe. Estado atual:{" "}
+                {hasStoredGeminiKey() ? "configurada" : "não configurada"}.
+              </small>
+            </label>
+            <div className="settings-actions">
+              <Button onClick={() => void testAndSaveGemini()} disabled={geminiTesting || !geminiKey.trim()}>
+                <Check size={15} />{" "}
+                {geminiTesting ? "Testando…" : "Testar e salvar"}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setShowGeminiKey(value => !value)}
+              >
+                {showGeminiKey ? "Ocultar" : "Mostrar"}
+              </Button>
+              {hasStoredGeminiKey() && (
+                <Button variant="danger" onClick={removeGeminiKey}>
+                  <Trash2 size={14} /> Remover
+                </Button>
+              )}
+            </div>
+            {geminiMessage && (
+              <p className="settings-copy" role="status">
+                {geminiMessage}
+              </p>
+            )}
+          </Card>
+          <Card className="settings-card">
+            <div className="settings-section-heading">
+              <span className="settings-icon blue">
+                <MessageSquareText size={17} />
+              </span>
+              <div>
+                <span className="eyebrow">IA ALTERNATIVA · DEEPSEEK / OPENAI</span>
+                <h3>API estilo OpenAI</h3>
+              </div>
+            </div>
+            <p className="settings-copy">
+              Para chaves DeepSeek, OpenAI ou qualquer endpoint compatível com
+              <em> /chat/completions</em>. Também funciona no site publicado e
+              fica só neste navegador (fora do backup JSON). Atenção: OpenAI e
+              DeepSeek cobram por uso (créditos/saldo) — só o Gemini tem cota
+              gratuita.
+            </p>
+            <div className="settings-actions">
+              {(Object.keys(COMPAT_PRESETS) as Array<keyof typeof COMPAT_PRESETS>).map(preset => (
+                <Button
+                  key={preset}
+                  variant="secondary"
+                  onClick={() => applyCompatPreset(preset)}
+                >
+                  Usar {COMPAT_PRESETS[preset].label}
+                </Button>
+              ))}
+            </div>
+            <label className="field-label">
+              Base URL
+              <input
+                className="field-control"
+                value={compatBase}
+                onChange={event => setCompatBase(event.target.value)}
+                placeholder="https://api.deepseek.com"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+            <label className="field-label">
+              Modelo
+              <input
+                className="field-control"
+                value={compatModel}
+                onChange={event => setCompatModel(event.target.value)}
+                placeholder="deepseek-chat"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+            <label className="field-label">
+              API key
+              <input
+                type={showCompatKey ? "text" : "password"}
+                className="field-control"
+                value={compatKey}
+                onChange={event => setCompatKey(event.target.value)}
+                placeholder="sk-…"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <small>Estado atual: {hasStoredCompatKey() ? "configurada" : "não configurada"}.</small>
+            </label>
+            <div className="settings-actions">
+              <Button onClick={() => void testAndSaveCompat()} disabled={compatTesting || !compatKey.trim()}>
+                <Check size={15} /> {compatTesting ? "Testando…" : "Testar e salvar"}
+              </Button>
+              <Button variant="secondary" onClick={() => setShowCompatKey(value => !value)}>
+                {showCompatKey ? "Ocultar" : "Mostrar"}
+              </Button>
+              {hasStoredCompatKey() && (
+                <Button variant="danger" onClick={removeCompatKey}>
+                  <Trash2 size={14} /> Remover
+                </Button>
+              )}
+            </div>
+            {compatMessage && (
+              <p className="settings-copy" role="status">
+                {compatMessage}
+              </p>
+            )}
           </Card>
           <Card className="settings-card">
             <div className="settings-section-heading">

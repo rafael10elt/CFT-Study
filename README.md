@@ -58,8 +58,14 @@ Para respostas de IA de verdade, sem pagar nada, escolha uma via
 
 **Opção 1 — Google Gemini (nuvem, cota gratuita):**
 1. Gere uma chave em https://aistudio.google.com/apikey
-2. Crie um `.env` na raiz (use `.env.example` de modelo) com
-   `GEMINI_API_KEY=sua-chave` e rode `npm run dev`
+2. No app, abra **Configurações → IA do tutor · Gemini**, cole a chave e
+   clique **Testar e salvar** — o app valida na hora e mostra o erro exato
+   se algo falhar (chave inválida, cota esgotada, sem internet). A chave
+   fica só neste navegador e nunca entra no backup JSON.
+3. Alternativa (só desenvolvimento local): `.env` com `GEMINI_API_KEY=…`.
+   No site publicado (Netlify, estático), **só vale o campo das
+   Configurações** — variável de ambiente do Netlify não é usada e pode
+   ser removida.
 
 **Opção 2 — Ollama (local, 100% grátis, funciona offline):**
 1. Instale https://ollama.com e baixe um modelo: `ollama pull llama3.1:8b`
@@ -69,8 +75,17 @@ Para respostas de IA de verdade, sem pagar nada, escolha uma via
    indicador “pensando”
 
 A etiqueta no topo do tutor mostra a origem: IA GERENCIADA, IA · GEMINI,
-IA · OLLAMA ou MODO OFFLINE. Chaves ficam só no servidor (`.env` está no
-`.gitignore` — nunca faça commit delas).
+IA · API COMPATÍVEL, IA · OLLAMA ou MODO OFFLINE. Chaves ficam só no
+servidor (`.env` está no `.gitignore` — nunca faça commit delas).
+
+**Chaves DeepSeek / OpenAI:** o app aceita qualquer API estilo OpenAI em
+**Configurações → IA alternativa** (botões Usar DeepSeek / Usar OpenAI
+preenchem base e modelo; cole a chave e **Testar e salvar**). Importante:
+cada chave só funciona na própria API (chave OpenAI não funciona no campo
+Gemini e vice-versa). OpenAI e DeepSeek cobram por uso — verifique
+créditos/saldo (erros 401 = chave inválida, 402 = sem saldo, 429 = limite
+atingido). Modelos Gemini válidos em 2026: `gemini-2.5-flash`,
+`gemini-3.5-flash-lite` (o app tenta nesta ordem).
 
 ## Tutor técnico (IA)
 

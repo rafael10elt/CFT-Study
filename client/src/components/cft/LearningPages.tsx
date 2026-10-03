@@ -26,6 +26,18 @@ import {
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { buildOfflineTutorReply } from "@shared/tutorFallback";
+import { buildTutorSystemPrompt } from "@shared/tutorPrompt";
+import {
+  chatWithGeminiBrowser,
+  GeminiKeyError,
+  getStoredGeminiKey,
+} from "@/lib/geminiClient";
+import {
+  chatWithCompatBrowser,
+  CompatKeyError,
+  getStoredCompatConfig,
+  hasStoredCompatKey,
+} from "@/lib/openaiCompatClient";
 import {
   QUIZ_QUESTIONS,
   SCENARIOS,
@@ -1192,9 +1204,11 @@ export function TutorPage() {
   const providerTag =
     provider === "gemini"
       ? "IA · GEMINI (GRATUITA)"
-      : provider === "ollama"
-        ? "IA · OLLAMA (LOCAL)"
-        : "IA GERENCIADA";
+      : provider === "compat"
+        ? "IA · API COMPATÍVEL"
+        : provider === "ollama"
+          ? "IA · OLLAMA (LOCAL)"
+          : "IA GERENCIADA";
   const storedMessages = state.tutorMessages;
   const messages = storedMessages.length
     ? storedMessages
@@ -1220,6 +1234,69 @@ export function TutorPage() {
     setText("");
     setError("");
     setOffline(false);
+    // Via 0 — chave do navegador (funciona até no site estático).
+    const browserKey = getStoredGeminiKey();
+    if (browserKey) {
+      try {
+        const direct = await chatWithGeminiBrowser(
+          buildTutorSystemPrompt("tutor"),
+          thread.slice(-10).map(message => ({
+            role: message.role as "user" | "assistant",
+            content: message.text.slice(0, 2500),
+          })),
+          browserKey
+        );
+        setProvider("gemini");
+        setError("");
+        saveTutorMessages([
+          ...thread,
+          {
+            id: newId("chat"),
+            role: "assistant",
+            text: direct.text,
+            at: new Date().toISOString(),
+          },
+        ]);
+        return;
+      } catch (caught) {
+        const reason =
+          caught instanceof GeminiKeyError
+            ? caught.message
+            : "Falha com a chave salva.";
+        setError(`${reason} Tentando outra via…`);
+      }
+    }
+    // Via 0b — API estilo OpenAI salva no navegador (DeepSeek/OpenAI).
+    if (hasStoredCompatKey()) {
+      try {
+        const direct = await chatWithCompatBrowser(
+          buildTutorSystemPrompt("tutor"),
+          thread.slice(-10).map(message => ({
+            role: message.role as "user" | "assistant",
+            content: message.text.slice(0, 2500),
+          })),
+          getStoredCompatConfig()
+        );
+        setProvider("compat");
+        setError("");
+        saveTutorMessages([
+          ...thread,
+          {
+            id: newId("chat"),
+            role: "assistant",
+            text: direct.text,
+            at: new Date().toISOString(),
+          },
+        ]);
+        return;
+      } catch (caught) {
+        const reason =
+          caught instanceof CompatKeyError
+            ? caught.message
+            : "Falha com a API alternativa.";
+        setError(`${reason} Tentando outra via…`);
+      }
+    }
     try {
       const result = await mutation.mutateAsync({
         mode: "tutor",
@@ -1230,6 +1307,7 @@ export function TutorPage() {
       });
       setOffline(result.offline === true);
       setProvider((result as { provider?: string }).provider ?? "");
+      setError("");
       saveTutorMessages([
         ...thread,
         {
@@ -1295,6 +1373,24 @@ export function TutorPage() {
             <strong>Assistente de revisão CFT</strong>
             <small>Português brasileiro · termos técnicos em inglês</small>
           </div>
+          <button
+            type="button"
+            className="tutor-clear"
+            onClick={() => {
+              if (
+                storedMessages.length === 0 ||
+                window.confirm("Apagar esta conversa do tutor? O resto do progresso é mantido.")
+              )
+                saveTutorMessages([]);
+              setOffline(false);
+              setProvider("");
+              setError("");
+            }}
+            disabled={mutation.isPending}
+            title="Apagar conversa do tutor"
+          >
+            Limpar conversa
+          </button>
           <span className="tutor-live">
             <i /> pronto
           </span>

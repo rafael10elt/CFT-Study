@@ -7,6 +7,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { buildOfflineTutorReply } from "./tutorFallback";
 import { chatWithFreeProviders } from "./aiProviders";
+import { buildTutorSystemPrompt } from "@shared/tutorPrompt";
 
 const TUTOR_RATE_WINDOW_MS = 60_000;
 const TUTOR_RATE_MAX = 12;
@@ -68,17 +69,13 @@ export const appRouter = router({
         assertTutorRateLimit(
           ctx.req.ip || ctx.req.socket.remoteAddress || "unknown"
         );
-        const safetyGuidance = `Você é um tutor técnico educacional para um profissional experiente que estuda operações de data centres na Irlanda. Responda em português brasileiro, preservando em inglês termos técnicos normalmente usados no trabalho. Assuma experiência prévia sem tratar todos os equipamentos como dominados; pergunte ou reconheça a incerteza quando faltar contexto. Não invente fatos, dados de site, curso/certificação oficial, experiência, resultado profissional, regulamento ou recomendação do fabricante. Diga quando algo é desconhecido e oriente verificar documentação oficial/fabricante e procedimentos da organização. O conteúdo é educativo, não substitui procedimentos oficiais, formação autorizada, avaliação de risco, permit to work nem profissionais responsáveis. Não forneça sequência de manobra, switching, isolamento/desenergização, reenergização, operação ou intervenção em equipamento elétrico energizado/crítico, nem setpoints, limites de segurança ou passos para executar trabalho perigoso. Se pedirem instruções desse tipo, recuse brevemente instruções executáveis e redirecione a uma abordagem geral de segurança, interrupção segura se aplicável e escalonamento conforme o processo oficial do site. Diferencie observações, hipóteses e conclusões; não alegue que curso, simulação ou quiz confere competência operacional.`;
-        const interviewGuidance =
-          input.mode === "interview-feedback"
-            ? "\n\nVocê está revisando uma resposta fornecida pelo estudante para entrevista. Use exclusivamente fatos contidos no texto; nunca crie responsabilidades, incidentes, resultados, números ou experiência. Forneça feedback em português sobre clareza, estrutura, vocabulário/gramática e uma versão concisa em inglês que preserve apenas o que está afirmado. Onde falte detalhe, use [add a true detail] ou uma pergunta, sem preencher a lacuna. STAR só se os fatos fornecidos permitirem."
-            : "";
+        const systemPrompt = buildTutorSystemPrompt(input.mode);
         try {
           const result = await invokeLLM({
             messages: [
               {
                 role: "system",
-                content: `${safetyGuidance}${interviewGuidance}`,
+                content: systemPrompt,
               },
               ...input.messages.map(message => ({
                 role: message.role,
@@ -107,7 +104,7 @@ export const appRouter = router({
           );
           // 1) Provedores gratuitos (Gemini → Ollama), se configurados.
           const free = await chatWithFreeProviders(
-            `${safetyGuidance}${interviewGuidance}`,
+            systemPrompt,
             input.messages.map(message => ({
               role: message.role,
               content: message.content,

@@ -3,6 +3,7 @@ import {
   chatWithFreeProviders,
   chatWithGemini,
   chatWithOllama,
+  chatWithOpenAICompatible,
 } from "./aiProviders";
 
 afterEach(() => {
@@ -94,6 +95,45 @@ describe("chatWithOllama", () => {
     expect(
       await chatWithOllama("sys", [{ role: "user", content: "q" }])
     ).toBeNull();
+  });
+});
+
+describe("chatWithOpenAICompatible", () => {
+  it("retorna null sem base URL ou chave", async () => {
+    expect(
+      await chatWithOpenAICompatible("sys", [{ role: "user", content: "q" }], {
+        baseUrl: "",
+        model: "deepseek-chat",
+        apiKey: "",
+      })
+    ).toBeNull();
+  });
+
+  it("extrai choices[0].message.content com Bearer", async () => {
+    const calls: Array<{ url: string; init: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: unknown) => {
+        calls.push({ url, init });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [{ message: { role: "assistant", content: "texto" } }],
+          }),
+        } as Response;
+      })
+    );
+    const text = await chatWithOpenAICompatible(
+      "sys",
+      [{ role: "user", content: "q" }],
+      { baseUrl: "https://api.deepseek.com/", model: "deepseek-chat", apiKey: "sk" }
+    );
+    expect(text).toBe("texto");
+    expect(calls[0].url).toBe("https://api.deepseek.com/chat/completions");
+    expect(
+      (calls[0].init as { headers: Record<string, string> }).headers.Authorization
+    ).toBe("Bearer sk");
   });
 });
 
